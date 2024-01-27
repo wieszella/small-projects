@@ -22,6 +22,11 @@ struct Move {
     int fromRow, fromCol, toRow, toCol;
 };
 
+std::ostream& operator<<(std::ostream& os, const Move& move) {
+    os << move.fromRow << ", " <<move.fromCol << "->" << move.toRow << ", " << move.toCol;
+    return os;
+}
+
 class CheckersGame {
 private:
     std::vector<std::vector<Piece>> board;
@@ -30,8 +35,7 @@ private:
 public:
     CheckersGame() : board(BOARD_SIZE, std::vector<Piece>(BOARD_SIZE, EMPTY)), currentPlayer(PLAYER_1) 
     {
-        //initializeBoard();
-        initializeBoardDebug();
+        initializeBoard();
     }
 
     void play() 
@@ -156,6 +160,13 @@ private:
         //assign to "move"
         move.fromRow = stoi(fromRow), move.fromCol = stoi(fromCol), move.toRow = stoi(toRow), move.toCol = stoi(toCol);
         return move;
+    }
+
+    bool isMoveInVector(Move m, std::vector<Move> possibilities) {
+        for (const auto& move : possibilities) {
+                if (move.fromCol == m.fromCol && move.fromRow == m.fromRow && move.toCol == m.toCol && move.toRow == m.toRow) return true;
+        }
+        return false;
     }
 
     bool isValidMove(const Move& move) 
@@ -294,6 +305,23 @@ private:
         return true;
     }
 
+    bool isValidChainEat(Move& move) {
+        Piece opponentKing = currentPlayer == PLAYER_1 ? PLAYER_2_KING : PLAYER_1_KING;
+        Piece opponentPiece = currentPlayer == PLAYER_1 ? PLAYER_2_PIECE : PLAYER_1_PIECE;
+        return 
+            //check if number in range
+            (move.fromCol <= 7 && move.fromCol >= 0 &&
+            move.fromRow <= 7 && move.fromRow >= 0 &&
+            move.toCol <= 7 && move.toCol >= 0 &&
+            move.toRow <= 7 && move.toRow >= 0 &&
+            //check that its a spot thats avaliable
+            board[move.toRow][move.toCol] == EMPTY &&
+            //check that the move IS EATING an opponent piece
+            ((board[(move.fromRow + move.toRow) / 2][(move.fromCol + move.toCol) / 2] == opponentPiece) ||
+            (board[(move.fromRow + move.toRow) / 2][(move.fromCol + move.toCol) / 2] == opponentKing)))
+            ? true : false;
+    }
+
     void eat(const Move& move) 
     {
         if (move.fromRow > move.toRow && move.fromCol > move.toCol)
@@ -322,6 +350,66 @@ private:
             for (int i = 1; i < abs(move.fromRow - move.toRow); i++)
             {
                 board[move.fromRow + i][move.fromCol + i] =EMPTY;
+            }
+        }
+        checkForChainEating(move);
+    }
+
+    void checkForChainEating(Move move) {
+        //this function is recursive
+        //check if piece can eat again
+        std::vector<Move> possibleMoves;
+        //check if player can eat in other 3 directions
+        Move next;
+        next.fromCol = move.toCol;
+        next.fromRow = move.toRow;
+        //check other directions
+        next.toCol = move.toCol + 2;
+        next.toRow = move.toRow + 2;
+        if (isValidChainEat(next)) possibleMoves.push_back(next);
+
+            next.toCol = move.toCol - 2;
+            next.toRow = move.toRow + 2;
+            if (isValidChainEat(next)) possibleMoves.push_back(next);
+
+            next.toCol = move.toCol + 2;
+            next.toRow = move.toRow - 2;
+            if (isValidChainEat(next)) possibleMoves.push_back(next);
+
+            next.toCol = move.toCol - 2;
+            next.toRow = move.toRow - 2;
+            if (isValidChainEat(next)) possibleMoves.push_back(next);
+        
+            if(possibleMoves.size() != 0){
+            //ask the user if he wants to chain eat or want to give away his turn
+            std::cout << "you have the option to chain eat in one of these directions" << std::endl;
+            for (const auto& move : possibleMoves) {
+                std::cout << move << std::endl;
+            }
+
+            std::string input = "";
+            while ((input.compare("y") != 0) && (input.compare("n") != 0) && (input.compare("Y") != 0) && (input.compare("N") != 0))
+            {
+                std::cout << "would you like to keep eating? (Y/N)" << std::endl;
+                std::cin >> input;
+            }
+            //if give away - break/ end turn
+            //if eat - check that the input was one of the calculate
+            Move userMove;
+            if (tolower(input[0]) == 'y') {
+                std::cout << "what move would you like to make?" << std::endl;
+                userMove = getMove();
+                //if valid - eat
+                //else - take input again
+                while (!isMoveInVector(userMove, possibleMoves)) {
+                    std::cout << "you can make only these moves" << std::endl;
+                    for (const auto& move : possibleMoves) {
+                        std::cout << move << std::endl;
+                    }
+                    std::cout << "what move would you like to make?" << std::endl;
+                    userMove = getMove();
+                }
+                executeMove(userMove);
             }
         }
     }
